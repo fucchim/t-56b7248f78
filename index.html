@@ -149,12 +149,6 @@ tbody tr:hover th.rh{background:#f2f6fb}
     <span class="lbl" id="dn"></span>
   </div>
   <div class="row">
-    <div class="fld"><span class="lbl">セルの表示</span>
-      <select id="metric">
-        <option value="rate">出率 (%)</option>
-        <option value="rb">RB確率 (1/N)</option>
-        <option value="all">合成確率 (1/N)</option>
-      </select></div>
     <div class="fld"><span class="lbl">並び替え</span>
       <select id="sort">
         <option value="picked">採用回数が多い順</option>
@@ -170,7 +164,6 @@ tbody tr:hover th.rh{background:#f2f6fb}
   </div>
 </div>
 
-<div class="legend" id="legend2" style="margin-bottom:6px"></div>
 <div class="legend">
   <span><span class="sw" style="background:#c62828">全</span> 全台6</span>
   <span><span class="sw" style="background:#ef8a3c">半</span> ハーフ高設定</span>
@@ -212,7 +205,7 @@ const ALL = "すべて";
 // この向きなら機種名を横書きのまま読めてスマホでも扱いやすい。
 // (縦=日付 の形が要るときは PNG か settings_report.html を見る)
 const S = {tab:ALL, d0:D.days[0], d1:D.days[D.days.length-1],
-           sort:"picked", q:"", showCnt:true, onlyPicked:false, metric:"rate"};
+           sort:"picked", q:"", showCnt:true, onlyPicked:false};
 const range = () => D.days.filter(d => d >= S.d0 && d <= S.d1);
 
 /** 絞り込んだ期間での機種ごとの集計。並び替えも見出しの数字もこれを使う。 */
@@ -240,21 +233,6 @@ function counts(m, days){
     if (c !== prev){ seq.push(c); if (prev !== null) chg[d]=c; prev=c; }
   }
   return {seq, chg};
-}
-
-/** その日その機種のボーナス確率。**母数は papimo の総スタート**を使う。
-    BB/RB も papimo 由来なので、みんレポの G数 と混ぜると数字が狂う
-    (293台中167台が3%以上ズレる)。papimo の取得開始 (2026-08-13) より前は null。 */
-function bonus(m, d){
-  const us = (D.units[m.n] || {})[d];
-  if (!us) return null;
-  let t = 0, bb = 0, rb = 0;
-  for (const u of us){
-    if (u[5] == null || u[3] == null) continue;      // 総スタート/BB が無い日
-    t += u[5]; bb += u[3]; rb += u[4] || 0;
-  }
-  if (!t || !(bb + rb)) return null;
-  return {t, bb, rb, rb1: rb ? t / rb : null, all1: t / (bb + rb)};
 }
 
 /** RB確率(または合成)が設定いくつ相当かを返す。スペックのある機種だけ。 */
@@ -329,34 +307,13 @@ function cell(o, d, chgSide){
   let cls = v === "全" ? "zen" : v === "半" ? "han" : "none";
   if (o.c.chg[d] !== undefined) cls += " " + chgSide;
 
-  // セルに出す数字は「セルの表示」で切り替える
-  let txt = "", col = "#8892a0", extra = "", bar = "";
-  if (S.metric === "rate"){
-    txt = p ? p[1].toFixed(0) : "";
-    col = rateColor(p ? p[1] : null);
-  } else {
-    const b = bonus(m, d);
-    const val = b ? (S.metric === "rb" ? b.rb1 : b.all1) : null;
-    if (val != null){
-      txt = Math.round(val);
-      const st = nearSetting(m.n, S.metric === "rb" ? "rb" : "all", val);
-      col = setColor(st);
-      // 対象日は背景が赤/オレンジで文字が白になり、設定の色が見えなくなる。
-      // セルの下端に細い帯を敷いて、背景に関係なく設定の目安が読めるようにする。
-      if (st) bar = `;box-shadow:inset 0 -3px 0 ${setColor(st)}`;
-      extra = ` / ${S.metric === "rb" ? "RB" : "合成"}1/${val.toFixed(1)}`
-            + (st ? ` (設定${st}相当)` : "")
-            + ` / BB${b.bb} RB${b.rb} 総スタート${b.t.toLocaleString()}`;
-    }
-  }
-  const style = ` style="${v ? "" : `color:${col}`}${bar}"`;
+  const style = v ? "" : ` style="color:${rateColor(p ? p[1] : null)}"`;
   // スマホでは備考の列を隠すので、セルの吹き出しに入れておく
   const tip = `${m.n} / ${d} / 設置${m.cnt[d]}台`
     + (p ? ` / 出率${p[1].toFixed(1)}% / 平均差枚${p[0] > 0 ? "+" : ""}${p[0].toLocaleString()}` : "")
-    + extra
     + (D.notes[d] ? ` / 備考: ${D.notes[d]}` : "");
   return `<td class="${cls}" title="${esc(tip)}"${style} data-m="${esc(m.n)}" data-d="${d}">`
-    + txt + "</td>";
+    + (p ? p[1].toFixed(0) : "") + "</td>";
 }
 
 /** 向き B: 縦=機種 / 横=日付。機種名が横書きで読める。 */
@@ -420,20 +377,6 @@ function render(){
   }
   document.getElementById("out").innerHTML =
     html || '<div class="empty">条件に合う機種がありません。期間・カテゴリ・検索語を見直してください。</div>';
-
-  // RB/合成のときだけ、設定の目安の色を説明する
-  const L = document.getElementById("legend2");
-  if (S.metric === "rate"){
-    L.innerHTML = "";
-  } else {
-    const nm = S.metric === "rb" ? "RB確率" : "合成確率";
-    L.innerHTML = `<span><b>${nm} 1/N</b> — 小さいほど良い。`
-      + `papimo の <b>総スタート</b>が母数 (2026-08-13 以降のみ)</span>`
-      + `<span>セル下端の帯 = スペック表で一番近い設定:</span>`
-      + [6,5,4,3,2,1].map(s =>
-          `<span><span class="sw" style="background:${setColor(s)}">${s}</span></span>`).join("")
-      + `<span>帯が無い機種はスペック表が無いもの (ジャグラー6機種ぶんだけ持っています)</span>`;
-  }
 }
 
 // ---- 台別内訳 ----
@@ -562,7 +505,6 @@ e0.onchange = () => { S.d0 = e0.value; if (S.d0 > S.d1){ S.d1 = S.d0; e1.value =
 e1.onchange = () => { S.d1 = e1.value; if (S.d1 < S.d0){ S.d0 = S.d1; e0.value = S.d0; }
                       toCustom(); render(); };
 
-document.getElementById("metric").onchange = e => { S.metric = e.target.value; render(); };
 document.getElementById("sort").onchange = e => { S.sort = e.target.value; render(); };
 document.getElementById("q").oninput = e => { S.q = e.target.value; render(); };
 document.getElementById("showCnt").onchange = e => { S.showCnt = e.target.checked; render(); };
