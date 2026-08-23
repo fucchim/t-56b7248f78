@@ -5,10 +5,9 @@
 <style>
 :root{--bg:#f7f9fc;--card:#fff;--line:#e3e8f0;--head:#37474f;--sub:#546e7a;
       --ink:#223;--dim:#8892a0;
-      --cw:38px;   /* 機種を横に並べるときの列幅 */
-      --dw:44px;   /* 日付を横に並べるときの列幅 (転置) */
-      --rw:206px;  /* 転置したときの機種名の列幅 */
-      --rh:28px;--nh:170px;--nfs:10px}
+      --dw:44px;   /* 日付(列)の幅 */
+      --rw:206px;  /* 機種名(左端の列)の幅 */
+      --rh:28px}
 *{box-sizing:border-box}
 /* 端末がダークテーマでも地色が透けないよう、html にも明示的に塗る。
    配色をライト固定にしているのは、赤=全 / オレンジ=半 / カテゴリ色が
@@ -69,29 +68,11 @@ td.han{background:#ef8a3c;color:#fff;font-weight:700}
 td.none{background:#fff}
 td.na{background:#eceff1;cursor:default}
 
-/* ---- 向き A: 行=日付 / 列=機種 (機種名は縦書き) ---- */
-th.mh{height:var(--nh);padding:0;vertical-align:top;width:var(--cw)}
-/* text-orientation:upright を付けないと「L」「A」など英字が横倒しになる。
-   PNG版 (make_settings_image.py) は1文字ずつ積んでいて英字も立っているので合わせる。
-   ただし英字を立てると1文字が1行ぶんの高さを食う。高さ(--nh)と文字サイズ(--nfs)は
-   その表で一番長い機種名に合わせて JS が決め、入りきらない分は実測して「…」で詰める。 */
-.rot{width:var(--cw);display:flex;justify-content:center}
-.rot span{writing-mode:vertical-rl;text-orientation:upright;
-          display:inline-block;padding:5px 0;font-size:var(--nfs);line-height:1.08;
-          max-height:calc(var(--nh) - 4px);overflow:hidden}
-th.sub{background:var(--sub);font-weight:400;font-size:9px;line-height:1.3;top:var(--nh)}
-th.d{background:var(--head);color:#fff;text-align:right;padding-right:6px;
-     position:sticky;left:0;z-index:3;min-width:74px}
-thead th.d{z-index:4}
-th.d .w{font-size:9px;opacity:.75;margin-left:2px}
-td.note,th.note{max-width:110px;overflow:hidden;text-overflow:ellipsis;text-align:left;
-                font-size:10px;color:#666;background:#fffdf5}
-td.chg{border-top:2px solid #ff9800}
-
-/* ---- 向き B: 行=機種 / 列=日付 (転置。機種名が横書きで読める) ---- */
+/* ---- 表: 行=機種 / 列=日付 ---- */
 th.rh{position:sticky;left:0;z-index:3;background:var(--card);color:var(--ink);
       text-align:left;width:var(--rw);min-width:var(--rw);max-width:var(--rw);
-      padding:3px 6px 3px 9px;border-left:4px solid var(--c,#ccc);font-weight:400}
+      padding:3px 6px 3px 9px;border-left:4px solid var(--c,#ccc);font-weight:400;
+      overflow:hidden}
 thead th.rh{background:var(--head);color:#fff;z-index:4;font-weight:700;
             border-left-color:var(--head)}
 th.rh .mn{font-size:11px;font-weight:700;overflow:hidden;text-overflow:ellipsis;
@@ -129,7 +110,7 @@ tbody tr:hover th.rh{background:#f2f6fb}
 
 /* ---- スマホ ---- */
 @media (max-width:760px){
-  :root{--cw:34px;--dw:40px;--rw:132px}   /* --nh / --nfs は表ごとに JS が付ける */
+  :root{--dw:40px;--rw:132px}   /* --dw は収まるなら詰まるよう JS が上書きする */
   body{padding:10px}
   h1{font-size:16px}
   .lead{font-size:11px;margin-bottom:10px}
@@ -142,9 +123,6 @@ tbody tr:hover th.rh{background:#f2f6fb}
   .seg{width:100%}
   .seg button{padding:5px 9px}
   .wrap{max-height:74vh}
-  th.d{min-width:60px;font-size:10px}
-  th.d .w{display:none}
-  td.note,th.note{display:none}    /* 幅が足りないので備考は隠す (セルの吹き出しには残す) */
   th.rh{padding:3px 4px 3px 7px}
   /* 幅が狭いので、機種名は「…」で切らずに2行まで折り返す。
      スマホでは title のツールチップが出ないため、切ると読む手段が無くなる。 */
@@ -171,11 +149,6 @@ tbody tr:hover th.rh{background:#f2f6fb}
     <span class="lbl" id="dn"></span>
   </div>
   <div class="row">
-    <div class="fld"><span class="lbl">表の向き</span>
-      <select id="orient">
-        <option value="1">縦=機種 / 横=日付</option>
-        <option value="0">縦=日付 / 横=機種</option>
-      </select></div>
     <div class="fld"><span class="lbl">並び替え</span>
       <select id="sort">
         <option value="picked">採用回数が多い順</option>
@@ -228,10 +201,11 @@ function rateColor(v){
 }
 
 const ALL = "すべて";
-// transpose = 縦に機種を並べる。期間を区切れば日付の数が少ないので、
-// こちらのほうが機種名を横書きで読めてスマホでも扱いやすい。既定はこちら。
+// 表は 縦=機種 / 横=日付 に固定。期間を入替ごとに区切れば日付の数が少ないので、
+// この向きなら機種名を横書きのまま読めてスマホでも扱いやすい。
+// (縦=日付 の形が要るときは PNG か settings_report.html を見る)
 const S = {tab:ALL, d0:D.days[0], d1:D.days[D.days.length-1],
-           sort:"picked", q:"", showCnt:true, onlyPicked:false, transpose:true};
+           sort:"picked", q:"", showCnt:true, onlyPicked:false};
 const range = () => D.days.filter(d => d >= S.d0 && d <= S.d1);
 
 /** 絞り込んだ期間での機種ごとの集計。並び替えも見出しの数字もこれを使う。 */
@@ -344,57 +318,11 @@ function tableByModel(g, ms, days){
     `<tr><th class="rh" style="--c:${BAND[g]}" title="${esc(o.m.n)}">
        <div class="mn">${esc(o.m.n)}</div><div class="ms">${statLine(o)}</div></th>`
     + days.map(d => cell(o, d, "chgL")).join("") + "</tr>").join("");
+  // 左上のセルは、下の行と同じ 2段組み (.mn / .ms) にする。
+  // 1行に流すと 206px の枠からはみ出す (th は nowrap なので折り返さない)。
   return `<div class="wrap" style="--dw:${dw}px"><table><thead>
-    <tr><th class="rh">機種 <span style="font-weight:400;opacity:.75">
-      (${S.showCnt?"台数 / ":""}採用 / 対象 非対象)</span></th>${head}</tr>
-    </thead><tbody>${rows}</tbody></table></div>`;
-}
-
-/** 向き A: 縦=日付 / 横=機種。従来の形 (PNG や settings_report.html と同じ)。 */
-function tableByDay(g, ms, days){
-  // 見出しの高さは、その表で一番長い機種名に合わせる。
-  // 英字を立てる (text-orientation:upright) と1文字=1行ぶんなので、
-  // 固定の高さだと長い名前が途中で切れてどの機種か分からなくなる。
-  const mob = innerWidth <= 760;
-  const nfs = mob ? 9 : 10;                    // 見出しの文字サイズ
-  const step = nfs * 1.08;                     // 1文字ぶんの高さ
-  const cap  = mob ? 210 : 300;                // これ以上は縦に伸ばさない
-  const PAD  = 14;                             // padding と max-height の余白ぶん
-  const longest = Math.max(...ms.map(o => o.m.n.length));
-  const nh = Math.min(cap, Math.max(86, Math.ceil(longest * step) + PAD));
-  const maxChars = Math.max(4, Math.floor((nh - PAD) / step));
-
-  const dark = g === "AT機";
-  const head = ms.map(o => {
-    const n = o.m.n;
-    const disp = n.length > maxChars ? n.slice(0, maxChars - 1) + "…" : n;
-    return `<th class="mh" style="background:${BAND[g]};color:${dark?'#fff':'#232f3a'}"
-        title="${esc(n)}"><div class="rot"><span>${esc(disp)}</span></div></th>`;
-  }).join("");
-  const sub = ms.map(o => {
-    const a = o.a, c = o.c;
-    const cl = c.seq.length > 1 ? "cvar" : "cfix";
-    const tip = Object.entries(c.chg).map(([d,v]) => d+" から "+v+"台").join(" / ");
-    const cnt = S.showCnt
-      ? `<span class="${cl}" title="${esc(tip||'期間中ずっと同じ台数')}">${c.seq.join("→")}台</span><br>`
-      : "";
-    return `<th class="sub">${cnt}${a.picked}回<br>`
-      + (a.on != null ? `<span style="color:${rateColor(a.on)}">${a.on.toFixed(0)}%</span>` : "-")
-      + (a.off != null ? `<br><span class="off">${a.off.toFixed(0)}%</span></th>` : "</th>");
-  }).join("");
-
-  const anyNote = days.some(d => D.notes[d]);
-  const rows = days.map(d => {
-    const note = D.notes[d] || "";
-    return `<tr><th class="d">${md(d)}<span class="w">(${wd(d)})</span></th>`
-      + (anyNote ? `<td class="note" title="${esc(note)}">${esc(note.slice(0,14))}</td>` : "")
-      + ms.map(o => cell(o, d, "chg")).join("") + "</tr>";
-  }).join("");
-
-  return `<div class="wrap" style="--nh:${nh}px;--nfs:${nfs}px"><table><thead>
-    <tr><th class="d">日付</th>${anyNote?'<th class="note">備考</th>':''}${head}</tr>
-    <tr><th class="d sub">${S.showCnt?'台数<br>':''}採用<br>対象<br>非対象</th>`
-    + (anyNote?'<th class="note sub"></th>':'') + `${sub}</tr>
+    <tr><th class="rh"><div class="mn">機種</div>
+      <div class="ms">${S.showCnt?"台数/":""}採用/対象・非対象</div></th>${head}</tr>
     </thead><tbody>${rows}</tbody></table></div>`;
 }
 
@@ -425,24 +353,10 @@ function render(){
       return yv - xv || x.m.n.localeCompare(y.m.n, "ja");
     });
     html += `<h2>${esc(g)} <span class="cnt">${ms.length}機種</span></h2>`
-         + (S.transpose ? tableByModel(g, ms, days) : tableByDay(g, ms, days));
+         + tableByModel(g, ms, days);
   }
   document.getElementById("out").innerHTML =
     html || '<div class="empty">条件に合う機種がありません。期間・カテゴリ・検索語を見直してください。</div>';
-  if (!S.transpose) trimNames();
-}
-
-/** 縦書きの見出しが枠に収まらないぶんを、実測して「…」で詰める。
-    文字の高さは字形やフォントで変わるので、計算だけでは1〜2文字ずれて末尾が切れる。
-    切れたまま出すとどの機種か分からなくなるため、描画後に測って直す。 */
-function trimNames(){
-  for (const s of document.querySelectorAll(".rot span")){
-    let t = s.textContent, guard = 0;
-    while (s.scrollHeight > s.clientHeight && t.length > 4 && guard++ < 40){
-      t = t.replace(/…$/, "").slice(0, -1) + "…";
-      s.textContent = t;
-    }
-  }
 }
 
 // ---- 台別内訳 ----
@@ -545,8 +459,6 @@ e0.onchange = () => { S.d0 = e0.value; if (S.d0 > S.d1){ S.d1 = S.d0; e1.value =
 e1.onchange = () => { S.d1 = e1.value; if (S.d1 < S.d0){ S.d0 = S.d1; e0.value = S.d0; }
                       toCustom(); render(); };
 
-document.getElementById("orient").onchange = e => {
-  S.transpose = e.target.value === "1"; render(); };
 document.getElementById("sort").onchange = e => { S.sort = e.target.value; render(); };
 document.getElementById("q").oninput = e => { S.q = e.target.value; render(); };
 document.getElementById("showCnt").onchange = e => { S.showCnt = e.target.checked; render(); };
